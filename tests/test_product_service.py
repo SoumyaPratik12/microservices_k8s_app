@@ -2,15 +2,19 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from jose import jwt
+from sqlalchemy import delete
 
+from shared.database import SessionLocal
+from services.product_service.app.models import Product
 from services.product_service.app import main as products
 
 client = TestClient(products.app)
 
 
 def setup_function():
-    products.products.clear()
-    products.next_id = 1
+    with SessionLocal() as db:
+        db.execute(delete(Product))
+        db.commit()
 
 
 def auth_headers():
