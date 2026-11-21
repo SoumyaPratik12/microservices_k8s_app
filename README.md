@@ -96,3 +96,83 @@ Passwords are hashed with PBKDF2-HMAC-SHA256. Payment processing is a simulation
 - **Phase 3:** Kubernetes Deployments, Services, Ingress, probes, ConfigMaps and Secrets
 - **Phase 4:** Helm, autoscaling, CI/CD and image publishing
 - **Phase 5:** Prometheus, Grafana, centralized logs and resilience testing
+
+
+## Helm deployment (Phase 3)
+
+The Helm chart is located at `helm/microservices-app`. It manages the five Deployments, five ClusterIP Services and the application ConfigMap.
+
+The Helm release is intentionally installed in a separate namespace (`microservices-helm`) so it does not take ownership of resources created earlier with `kubectl apply -k k8s`.
+
+Install Helm in the Codespace if it is not already available, then verify:
+
+    helm version
+
+Pull the latest repository changes:
+
+    git pull origin main
+
+Confirm the Kind cluster is active and the five application images are loaded:
+
+    kubectl get nodes
+    docker images | grep microservices-k8s-app
+
+If the images were rebuilt, load them into Kind again:
+
+    kind load docker-image --name microservices \
+      microservices-k8s-app-auth:0.1.0 \
+      microservices-k8s-app-product:0.1.0 \
+      microservices-k8s-app-payment:0.1.0 \
+      microservices-k8s-app-order:0.1.0 \
+      microservices-k8s-app-gateway:0.1.0
+
+Create a separate namespace and JWT Secret. Keep the secret value private and do not put it in values.yaml:
+
+    kubectl create namespace microservices-helm
+    export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    kubectl create secret generic app-secrets \
+      --namespace microservices-helm \
+      --from-literal=jwt-secret="$JWT_SECRET"
+
+Validate and render the chart before installing:
+
+    helm lint helm/microservices-app
+    helm template microservices helm/microservices-app \
+      --namespace microservices-helm
+
+Install the chart:
+
+    helm upgrade --install microservices helm/microservices-app \
+      --namespace microservices-helm \
+      --create-namespace
+
+Check the release and workloads:
+
+    helm status microservices -n microservices-helm
+    kubectl get deployments,pods,services -n microservices-helm
+
+Forward the Helm-managed API Gateway on a different local port:
+
+    kubectl port-forward -n microservices-helm service/api-gateway 8081:8000
+
+Test it from another terminal:
+
+    curl http://localhost:8081/health
+
+Upgrade after changing chart templates or values:
+
+    helm upgrade microservices helm/microservices-app \
+      --namespace microservices-helm
+
+Rollback to the previous Helm revision:
+
+    helm history microservices -n microservices-helm
+    helm rollback microservices 1 -n microservices-helm
+
+Uninstall only the Helm-managed release:
+
+    helm uninstall microservices -n microservices-helm
+
+The original `microservices` namespace deployment remains separate.
+
+The chart currently uses one replica per service and local Kind images with `IfNotPresent`. The application still uses in-memory data stores; persistent PostgreSQL storage is a prerequisite for meaningful multi-replica scaling.
