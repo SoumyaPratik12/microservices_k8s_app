@@ -37,6 +37,15 @@ services:
 secret:
   name: app-secrets
   jwtKey: jwt-secret
+  postgresPasswordKey: postgres-password
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  database: microservices
+  username: microservices
+  storage: 1Gi
+  storageClassName: ""
 
 resources:
   requests:
@@ -45,6 +54,14 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+postgresResources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
 
 probes:
   readiness:
@@ -67,4 +84,4 @@ config:
   orderServiceUrl: "http://order-service:8000"
   paymentServiceUrl: "http://payment-service:8000"
 
-# Keep the JWT secret outside Helm values. Create it separately with kubectl.
+# Create app-secrets separately; never store credentials in this file.
