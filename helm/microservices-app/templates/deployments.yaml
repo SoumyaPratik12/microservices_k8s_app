@@ -57,6 +57,12 @@ spec:
                   key: {{ $.Values.secret.postgresPasswordKey }}
             {{- end }}
           {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /health
