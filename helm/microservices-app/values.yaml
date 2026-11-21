@@ -1,0 +1,70 @@
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+services:
+  auth:
+    name: auth-service
+    image: microservices-k8s-app-auth
+    port: 8000
+    jwtSecret: true
+  product:
+    name: product-service
+    image: microservices-k8s-app-product
+    port: 8000
+    jwtSecret: true
+  payment:
+    name: payment-service
+    image: microservices-k8s-app-payment
+    port: 8000
+    jwtSecret: false
+  order:
+    name: order-service
+    image: microservices-k8s-app-order
+    port: 8000
+    jwtSecret: true
+  gateway:
+    name: api-gateway
+    image: microservices-k8s-app-gateway
+    port: 8000
+    jwtSecret: false
+
+secret:
+  name: app-secrets
+  jwtKey: jwt-secret
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  liveness:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+
+service:
+  type: ClusterIP
+
+gateway:
+  service:
+    port: 8000
+
+config:
+  authServiceUrl: "http://auth-service:8000"
+  productServiceUrl: "http://product-service:8000"
+  orderServiceUrl: "http://order-service:8000"
+  paymentServiceUrl: "http://payment-service:8000"
+
+# Keep the JWT secret outside Helm values. Create it separately with kubectl.
