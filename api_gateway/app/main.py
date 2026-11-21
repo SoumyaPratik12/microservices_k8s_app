@@ -11,6 +11,7 @@ SERVICES = {
     "orders": os.getenv("ORDER_SERVICE_URL", "http://127.0.0.1:8004"),
     "payments": os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8003"),
 }
+RESOURCE_ROOTS = {"auth": "", "products": "products", "orders": "orders", "payments": "payments"}
 
 
 @app.get("/health")
@@ -24,7 +25,14 @@ async def proxy(service: str, request: Request, path: str = ""):
     base_url = SERVICES.get(service)
     if not base_url:
         return JSONResponse(status_code=404, content={"detail": "Unknown service"})
-    upstream_url = f"{base_url}/" + path
+
+    resource_root = RESOURCE_ROOTS[service]
+    if resource_root:
+        upstream_path = f"/{resource_root}" + (f"/{path}" if path else "")
+    else:
+        upstream_path = f"/{path}" if path else "/"
+    upstream_url = f"{base_url}{upstream_path}"
+
     body = await request.body()
     headers = {
         key: value
