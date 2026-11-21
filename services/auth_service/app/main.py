@@ -4,13 +4,24 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from jose import jwt
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="Auth Service", version="0.1.0")
+from shared.database import get_db, initialize_database, initialize_sqlite_tables
+from services.auth_service.app.models import User
+
+app = FastAPI(title="Auth Service", version="0.2.0")
 JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
-users: dict[str, dict[str, str]] = {}
+initialize_sqlite_tables([User.__table__])
+
+
+@app.on_event("startup")
+def startup_database():
+    initialize_database([User.__table__])
 
 
 class RegisterRequest(BaseModel):
@@ -40,20 +51,26 @@ def health():
 
 
 @app.post("/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest):
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     email = payload.email.lower()
-    if email in users:
+    if db.get(User, email):
         raise HTTPException(status_code=409, detail="Email already registered")
     salt, password_hash = hash_password(payload.password)
-    users[email] = {"salt": salt, "password_hash": password_hash}
+    user = User(email=email, salt=salt, password_hash=password_hash)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
     return {"email": email, "message": "User registered"}
 
 
 @app.post("/login")
-def login(payload: LoginRequest):
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
     email = payload.email.lower()
-    user = users.get(email)
-    if not user or not verify_password(payload.password, user["salt"], user["password_hash"]):
+    user = db.get(User, email)
+    if not user or not verify_password(payload.password, user.salt, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     now = datetime.now(timezone.utc)
     token = jwt.encode(
