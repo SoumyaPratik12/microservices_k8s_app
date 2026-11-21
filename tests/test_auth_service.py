@@ -1,12 +1,17 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 
+from shared.database import SessionLocal
+from services.auth_service.app.models import User
 from services.auth_service.app import main as auth
 
 client = TestClient(auth.app)
 
 
 def setup_function():
-    auth.users.clear()
+    with SessionLocal() as db:
+        db.execute(delete(User))
+        db.commit()
 
 
 def test_register_and_login_returns_bearer_token():
