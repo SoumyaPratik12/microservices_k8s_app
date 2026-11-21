@@ -9,8 +9,8 @@ A learning project for independently deployable Python microservices, developed 
 - **Payment Service (8003):** payment simulation only; no real money movement
 - **Order Service (8004):** validates products and coordinates simulated payments
 
-## Phase 1 architecture
-Phase 1 validates service boundaries, REST contracts, JWT authentication, synchronous service-to-service HTTP calls, container builds and multi-container orchestration. Each service currently stores data in memory, so data resets when its container restarts. PostgreSQL and Redis are planned for Phase 2.
+## Architecture
+The application uses independently deployable FastAPI services, JWT authentication, synchronous service-to-service HTTP calls, Docker Compose, Kubernetes and Helm. Auth, Product and Order data are persisted through SQLAlchemy. Docker Compose and Helm deployments use PostgreSQL; automated tests use a local SQLite database. Payment processing remains a simulation.
 
 ## Run in your existing GitHub Codespace
 
@@ -23,7 +23,12 @@ Install dependencies and run the test suite:
     pip install -r requirements-dev.txt
     pytest -q
 
-Build and start all five containers:
+Set development secrets (use strong values outside a disposable local environment):
+
+    export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+
+Build and start PostgreSQL plus the five application containers:
 
     docker compose up --build -d
 
@@ -82,20 +87,21 @@ List the current user's orders:
 
 ## Configuration and security
 
-All services that validate JWTs must use the same `JWT_SECRET`. The default value is for local development only. Before running the Compose stack with a custom secret, export it in the Codespace terminal:
+All services that validate JWTs must use the same `JWT_SECRET`. The default values are for local development only. Before running the Compose stack with custom secrets, export them in the Codespace terminal:
 
     export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 
 Then run `docker compose up --build -d` from that same terminal session. Do not commit real secrets to Git.
 
-Passwords are hashed with PBKDF2-HMAC-SHA256. Payment processing is a simulation and must not be used for real transactions. The current in-memory data stores, development JWT configuration and simulated payment flow are not production-ready.
+Passwords are hashed with PBKDF2-HMAC-SHA256. Auth users, products and orders are stored in PostgreSQL for Compose and Helm deployments. The payment endpoint is a simulation and must not be used for real transactions. The default development credentials are not production-ready.
 
 ## Roadmap
 - **Phase 1:** service boundaries, REST APIs, JWT, service-to-service calls, Docker and Compose
-- **Phase 2:** PostgreSQL persistence, Redis, database migrations and data ownership
+- **Phase 2:** PostgreSQL persistence for Auth, Product and Order; SQLAlchemy ORM and automated persistence tests
 - **Phase 3:** Kubernetes Deployments, Services, Ingress, probes, ConfigMaps and Secrets
-- **Phase 4:** Helm, autoscaling, CI/CD and image publishing
-- **Phase 5:** Prometheus, Grafana, centralized logs and resilience testing
+- **Phase 4:** Helm, PostgreSQL StatefulSet with PVC, CI/CD and image publishing
+- **Phase 5:** Alembic migrations, Redis, autoscaling, Prometheus, Grafana and resilience testing
 
 
 ## Helm deployment (Phase 3)
@@ -176,3 +182,73 @@ Uninstall only the Helm-managed release:
 The original `microservices` namespace deployment remains separate.
 
 The chart currently uses one replica per service and local Kind images with `IfNotPresent`. The application still uses in-memory data stores; persistent PostgreSQL storage is a prerequisite for meaningful multi-replica scaling.
+
+
+## PostgreSQL persistence (Phase 2)
+
+The Auth, Product and Order services use SQLAlchemy and share a PostgreSQL instance in the local deployment. Each service owns its own table:
+- Auth: `auth_users`
+- Product: `catalog_products`
+- Order: `customer_orders`
+
+The payment service is intentionally a simulation. Its response is stored as JSON on the order record.
+
+For Docker Compose, PostgreSQL is started with a named volume:
+
+    export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    docker compose up --build -d
+    docker compose ps
+    docker compose logs postgres
+
+The PostgreSQL data volume is named `postgres_data`. To stop the application without deleting data:
+
+    docker compose down
+
+To intentionally delete the local database volume (destructive):
+
+    docker compose down -v
+
+The application creates its current MVP tables at service startup. A versioned Alembic migration workflow is the next database-hardening task.
+
+## Helm with PostgreSQL
+
+The Helm chart includes a PostgreSQL StatefulSet, ClusterIP Service and persistent volume claim. Create both credentials in the Helm namespace before upgrading the chart:
+
+    kubectl create namespace microservices-helm --dry-run=client -o yaml | kubectl apply -f -
+    export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    kubectl create secret generic app-secrets \
+      --namespace microservices-helm \
+      --from-literal=jwt-secret="$JWT_SECRET" \
+      --from-literal=postgres-password="$POSTGRES_PASSWORD" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+Pull latest changes and rebuild all application images because the service code now uses SQLAlchemy:
+
+    git pull origin main
+    docker build -t microservices-k8s-app-auth:0.2.0 --build-arg APP_MODULE=services.auth_service.app.main:app .
+    docker build -t microservices-k8s-app-product:0.2.0 --build-arg APP_MODULE=services.product_service.app.main:app .
+    docker build -t microservices-k8s-app-payment:0.2.0 --build-arg APP_MODULE=services.payment_service.app.main:app .
+    docker build -t microservices-k8s-app-order:0.2.0 --build-arg APP_MODULE=services.order_service.app.main:app .
+    docker build -t microservices-k8s-app-gateway:0.2.0 --build-arg APP_MODULE=api_gateway.app.main:app
+
+Load the new images into Kind:
+
+    kind load docker-image --name microservices \
+      microservices-k8s-app-auth:0.2.0 \
+      microservices-k8s-app-product:0.2.0 \
+      microservices-k8s-app-payment:0.2.0 \
+      microservices-k8s-app-order:0.2.0 \
+      microservices-k8s-app-gateway:0.2.0
+
+Upgrade the Helm chart to use the new image tag:
+
+    helm upgrade --install microservices helm/microservices-app \
+      --namespace microservices-helm \
+      --set image.tag=0.2.0
+
+Check the PostgreSQL StatefulSet, PVC and application pods:
+
+    kubectl get statefulset,pvc,pods,services -n microservices-helm
+    kubectl logs statefulset/postgres -n microservices-helm
