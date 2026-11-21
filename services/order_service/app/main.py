@@ -6,12 +6,17 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="Order Service", version="0.1.0")
+from shared.database import get_db, initialize_database, initialize_sqlite_tables
+from services.order_service.app.models import Order
+
+app = FastAPI(title="Order Service", version="0.2.0")
 JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://127.0.0.1:8002")
 PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8003")
-orders: dict[str, dict] = {}
+initialize_sqlite_tables([Order.__table__])
 
 
 class OrderCreate(BaseModel):
@@ -29,13 +34,36 @@ def require_user(authorization: Annotated[str | None, Header()] = None) -> str:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
+def serialize_order(order: Order) -> dict:
+    return {
+        "order_id": order.order_id,
+        "user": order.user,
+        "product_id": order.product_id,
+        "product_name": order.product_name,
+        "quantity": order.quantity,
+        "total_amount": float(order.total_amount),
+        "status": order.status,
+        "payment": order.payment,
+    }
+
+
+@app.on_event("startup")
+def startup_database():
+    initialize_database([Order.__table__])
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "order-service"}
 
 
 @app.post("/orders", status_code=201)
-async def create_order(payload: OrderCreate, user: str = Depends(require_user), authorization: str | None = Header(default=None)):
+async def create_order(
+    payload: OrderCreate,
+    user: str = Depends(require_user),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
     headers = {"Authorization": authorization} if authorization else {}
     async with httpx.AsyncClient(timeout=8.0) as client:
         try:
@@ -51,7 +79,7 @@ async def create_order(payload: OrderCreate, user: str = Depends(require_user), 
 
         order_id = str(uuid4())
         amount = round(product["price"] * payload.quantity, 2)
-        order = {
+        order_data = {
             "order_id": order_id,
             "user": user,
             "product_id": product["id"],
@@ -66,26 +94,30 @@ async def create_order(payload: OrderCreate, user: str = Depends(require_user), 
                 json={"order_id": order_id, "amount": amount, "currency": "USD"},
             )
             payment_response.raise_for_status()
-            order["payment"] = payment_response.json()
-            order["status"] = "confirmed"
+            payment = payment_response.json()
+            order_data["payment"] = payment
+            order_data["status"] = "confirmed"
         except httpx.HTTPStatusError:
-            order["status"] = "payment_failed"
             raise HTTPException(status_code=502, detail="Payment service rejected the request")
         except httpx.RequestError:
             raise HTTPException(status_code=503, detail="Payment service unavailable")
 
-    orders[order_id] = order
-    return order
+    order = Order(**order_data)
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    return serialize_order(order)
 
 
 @app.get("/orders")
-def list_orders(user: str = Depends(require_user)):
-    return [order for order in orders.values() if order["user"] == user]
+def list_orders(user: str = Depends(require_user), db: Session = Depends(get_db)):
+    items = db.scalars(select(Order).where(Order.user == user).order_by(Order.created_at)).all()
+    return [serialize_order(item) for item in items]
 
 
 @app.get("/orders/{order_id}")
-def get_order(order_id: str, user: str = Depends(require_user)):
-    order = orders.get(order_id)
-    if not order or order["user"] != user:
+def get_order(order_id: str, user: str = Depends(require_user), db: Session = Depends(get_db)):
+    order = db.get(Order, order_id)
+    if not order or order.user != user:
         raise HTTPException(status_code=404, detail="Order not found")
-    return order
+    return serialize_order(order)
