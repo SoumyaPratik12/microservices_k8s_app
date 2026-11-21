@@ -17,7 +17,9 @@ Phase 1 uses in-memory stores to validate service boundaries and API contracts. 
 1. Open this repository on GitHub.
 2. Select Code → Codespaces → Create codespace on main.
 3. Wait for dev container setup.
-4. Install dependencies if required: `pip install -r requirements-dev.txt`
+4. Install dependencies if required:
+
+    pip install -r requirements-dev.txt
 
 5. Start each service in a separate terminal:
 
@@ -30,16 +32,22 @@ Phase 1 uses in-memory stores to validate service boundaries and API contracts. 
 6. Open port 8000 from the Ports tab. API documentation is available at /docs.
 
 ## API walkthrough
-1. Register: POST /api/auth/register
-2. Login: POST /api/auth/login
-3. Copy the returned access token.
-4. Create a product: POST /api/products with Authorization: Bearer <token>
-5. Create an order: POST /api/orders with the same bearer token.
-6. Inspect the response for the simulated payment result.
+Use the forwarded Codespaces URL for port 8000 (or http://localhost:8000 from the terminal).
 
-Registration JSON: {"email":"dev@example.com","password":"StrongPass123"}
-Product JSON: {"name":"Keyboard","description":"Mechanical keyboard","price":79.99,"stock":10}
-Order JSON: {"product_id":1,"quantity":2}
+Register:
+    curl -X POST http://localhost:8000/api/auth/register -H "Content-Type: application/json" -d '{"email":"dev@example.com","password":"StrongPass123"}'
+
+Login and store the token:
+    TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" -d '{"email":"dev@example.com","password":"StrongPass123"}' | python -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+
+Create a product:
+    curl -X POST http://localhost:8000/api/products -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"name":"Keyboard","description":"Mechanical keyboard","price":79.99,"stock":10}'
+
+Create an order:
+    curl -X POST http://localhost:8000/api/orders -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"product_id":1,"quantity":2}'
+
+List products:
+    curl http://localhost:8000/api/products -H "Authorization: Bearer $TOKEN"
 
 ## Service ports
 | Service | Port | OpenAPI |
