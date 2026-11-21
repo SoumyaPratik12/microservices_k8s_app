@@ -1,0 +1,16 @@
+The microservices application has been installed in namespace {{ .Release.Namespace }}.
+
+Check workloads:
+  kubectl get deployments,pods,services -n {{ .Release.Namespace }}
+
+Forward the API Gateway:
+  kubectl port-forward -n {{ .Release.Namespace }} service/api-gateway 8081:8000
+
+Then open:
+  http://localhost:8081/health
+  http://localhost:8081/docs
+
+The JWT Secret must exist before installation:
+  kubectl create secret generic {{ .Values.secret.name }} \
+    --namespace {{ .Release.Namespace }} \
+    --from-literal={{ .Values.secret.jwtKey }}='<your-secret>'
