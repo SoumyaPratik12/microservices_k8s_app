@@ -20,6 +20,10 @@ def auth_headers():
 
 
 class FakeAsyncClient:
+    def __init__(self, *args, **kwargs):
+        # Match httpx.AsyncClient's constructor interface used by the service.
+        self.timeout = kwargs.get("timeout")
+
     async def __aenter__(self):
         return self
 
