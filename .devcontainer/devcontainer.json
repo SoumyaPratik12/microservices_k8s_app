@@ -1,0 +1,14 @@
+{
+  "name": "Microservices K8s Dev",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "latest",
+      "minikube": "none"
+    },
+    "ghcr.io/devcontainers-extra/features/kind:1": {}
+  },
+  "forwardPorts": [8000, 8080]
+}
