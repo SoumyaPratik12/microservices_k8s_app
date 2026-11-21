@@ -1,0 +1,98 @@
+services:
+  auth-service:
+    build:
+      context: .
+      args:
+        APP_MODULE: services.auth_service.app.main:app
+    environment:
+      PORT: "8000"
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  product-service:
+    build:
+      context: .
+      args:
+        APP_MODULE: services.product_service.app.main:app
+    environment:
+      PORT: "8000"
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  payment-service:
+    build:
+      context: .
+      args:
+        APP_MODULE: services.payment_service.app.main:app
+    environment:
+      PORT: "8000"
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  order-service:
+    build:
+      context: .
+      args:
+        APP_MODULE: services.order_service.app.main:app
+    environment:
+      PORT: "8000"
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
+      PRODUCT_SERVICE_URL: http://product-service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8000
+    ports:
+      - "8004:8000"
+    depends_on:
+      product-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: .
+      args:
+        APP_MODULE: api_gateway.app.main:app
+    environment:
+      PORT: "8000"
+      AUTH_SERVICE_URL: http://auth-service:8000
+      PRODUCT_SERVICE_URL: http://product-service:8000
+      ORDER_SERVICE_URL: http://order-service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
