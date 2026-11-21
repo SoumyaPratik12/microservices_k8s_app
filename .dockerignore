@@ -9,3 +9,7 @@
 venv
 tests
 README.md
+*.db
+*.db-shm
+*.db-wal
+postgres_data
