@@ -1,14 +1,18 @@
 import os
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="Product Service", version="0.1.0")
+from shared.database import get_db, initialize_database, initialize_sqlite_tables
+from services.product_service.app.models import Product
+
+app = FastAPI(title="Product Service", version="0.2.0")
 JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
-products: dict[int, dict] = {}
-next_id = 1
+initialize_sqlite_tables([Product.__table__])
 
 
 class ProductCreate(BaseModel):
@@ -35,44 +39,67 @@ def require_user(authorization: Annotated[str | None, Header()] = None) -> str:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
+def serialize_product(item: Product) -> dict:
+    return {
+        "id": item.id,
+        "name": item.name,
+        "description": item.description,
+        "price": float(item.price),
+        "stock": item.stock,
+        "created_by": item.created_by,
+    }
+
+
+@app.on_event("startup")
+def startup_database():
+    initialize_database([Product.__table__])
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "product-service"}
 
 
 @app.post("/products", status_code=201)
-def create_product(payload: ProductCreate, user: str = Depends(require_user)):
-    global next_id
-    item = {"id": next_id, **payload.model_dump(), "created_by": user}
-    products[next_id] = item
-    next_id += 1
-    return item
+def create_product(payload: ProductCreate, user: str = Depends(require_user), db: Session = Depends(get_db)):
+    item = Product(**payload.model_dump(), created_by=user)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return serialize_product(item)
 
 
 @app.get("/products")
-def list_products(user: str = Depends(require_user)):
-    return list(products.values())
+def list_products(user: str = Depends(require_user), db: Session = Depends(get_db)):
+    items = db.scalars(select(Product).order_by(Product.id)).all()
+    return [serialize_product(item) for item in items]
 
 
 @app.get("/products/{product_id}")
-def get_product(product_id: int, user: str = Depends(require_user)):
-    item = products.get(product_id)
+def get_product(product_id: int, user: str = Depends(require_user), db: Session = Depends(get_db)):
+    item = db.get(Product, product_id)
     if not item:
         raise HTTPException(status_code=404, detail="Product not found")
-    return item
+    return serialize_product(item)
 
 
 @app.patch("/products/{product_id}")
-def update_product(product_id: int, payload: ProductUpdate, user: str = Depends(require_user)):
-    item = products.get(product_id)
+def update_product(product_id: int, payload: ProductUpdate, user: str = Depends(require_user), db: Session = Depends(get_db)):
+    item = db.get(Product, product_id)
     if not item:
         raise HTTPException(status_code=404, detail="Product not found")
-    item.update(payload.model_dump(exclude_unset=True))
-    return item
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return serialize_product(item)
 
 
 @app.delete("/products/{product_id}", status_code=204)
-def delete_product(product_id: int, user: str = Depends(require_user)):
-    if product_id not in products:
+def delete_product(product_id: int, user: str = Depends(require_user), db: Session = Depends(get_db)):
+    item = db.get(Product, product_id)
+    if not item:
         raise HTTPException(status_code=404, detail="Product not found")
-    del products[product_id]
+    db.delete(item)
+    db.commit()
+    return Response(status_code=204)
