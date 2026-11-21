@@ -106,7 +106,7 @@ Passwords are hashed with PBKDF2-HMAC-SHA256. Auth users, products and orders ar
 
 ## Helm deployment (Phase 3)
 
-The Helm chart is located at `helm/microservices-app`. It manages the five Deployments, five ClusterIP Services and the application ConfigMap.
+The Helm chart is located at `helm/microservices-app`. It manages the five application Deployments and Services, PostgreSQL StatefulSet and Service, ConfigMaps, probes and a persistent volume claim.
 
 The Helm release is intentionally installed in a separate namespace (`microservices-helm`) so it does not take ownership of resources created earlier with `kubectl apply -k k8s`.
 
@@ -132,13 +132,16 @@ If the images were rebuilt, load them into Kind again:
       microservices-k8s-app-order:0.1.0 \
       microservices-k8s-app-gateway:0.1.0
 
-Create a separate namespace and JWT Secret. Keep the secret value private and do not put it in values.yaml:
+Create a separate namespace and both application credentials. Keep the secret values private and do not put them in values.yaml:
 
-    kubectl create namespace microservices-helm
+    kubectl create namespace microservices-helm --dry-run=client -o yaml | kubectl apply -f -
     export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
     kubectl create secret generic app-secrets \
       --namespace microservices-helm \
-      --from-literal=jwt-secret="$JWT_SECRET"
+      --from-literal=jwt-secret="$JWT_SECRET" \
+      --from-literal=postgres-password="$POSTGRES_PASSWORD" \
+      --dry-run=client -o yaml | kubectl apply -f -
 
 Validate and render the chart before installing:
 
@@ -181,7 +184,7 @@ Uninstall only the Helm-managed release:
 
 The original `microservices` namespace deployment remains separate.
 
-The chart currently uses one replica per service and local Kind images with `IfNotPresent`. The application still uses in-memory data stores; persistent PostgreSQL storage is a prerequisite for meaningful multi-replica scaling.
+The chart currently uses one replica per application service and local Kind images with `IfNotPresent`. Auth, Product and Order use PostgreSQL. The PostgreSQL StatefulSet uses a persistent volume claim. The payment service remains a simulation.
 
 
 ## PostgreSQL persistence (Phase 2)
