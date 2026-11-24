@@ -1,0 +1,1 @@
+Database schema migrations managed by Alembic. Generate revisions with `alembic revision --autogenerate -m "description"` and apply with `alembic upgrade head`.
