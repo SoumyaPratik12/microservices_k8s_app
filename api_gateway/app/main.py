@@ -35,9 +35,7 @@ async def proxy(service: str, request: Request, path: str = ""):
 
     body = await request.body()
     headers = {
-        key: value
-        for key, value in request.headers.items()
-        if key.lower() not in {"host", "content-length"}
+        key: value for key, value in request.headers.items() if key.lower() not in {"host", "content-length"}
     }
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -49,7 +47,8 @@ async def proxy(service: str, request: Request, path: str = ""):
                 headers=headers,
             )
         response_headers = {
-            key: value for key, value in upstream.headers.items()
+            key: value
+            for key, value in upstream.headers.items()
             if key.lower() in {"content-type", "cache-control"}
         }
         return Response(content=upstream.content, status_code=upstream.status_code, headers=response_headers)

@@ -2,5 +2,5 @@ apiVersion: v2
 name: microservices-app
 description: Helm chart for the five-service FastAPI microservices application with PostgreSQL persistence
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.5.0
+appVersion: "0.5.0"

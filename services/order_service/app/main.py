@@ -1,22 +1,26 @@
 import os
 from typing import Annotated
-from uuid import uuid4
 
-import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shared.database import get_db, initialize_database, initialize_sqlite_tables
-from services.order_service.app.models import Order
+from shared.database import get_db, initialize_sqlite_tables
+from services.order_service.app.models import IdempotencyRecord, Order
+from services.order_service.app.transactions import (
+    _in_progress_response,
+    _stored_response,
+    canonical_request_hash,
+    claim_idempotency_record,
+    process_transaction,
+    validate_idempotency_key,
+)
 
-app = FastAPI(title="Order Service", version="0.2.0")
+app = FastAPI(title="Order Service", version="0.5.0")
 JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
-PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://127.0.0.1:8002")
-PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8003")
-initialize_sqlite_tables([Order.__table__])
+initialize_sqlite_tables([Order.__table__, IdempotencyRecord.__table__])
 
 
 class OrderCreate(BaseModel):
@@ -47,11 +51,6 @@ def serialize_order(order: Order) -> dict:
     }
 
 
-@app.on_event("startup")
-def startup_database():
-    initialize_database([Order.__table__])
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "order-service"}
@@ -62,51 +61,16 @@ async def create_order(
     payload: OrderCreate,
     user: str = Depends(require_user),
     authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    headers = {"Authorization": authorization} if authorization else {}
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        try:
-            product_response = await client.get(
-                f"{PRODUCT_SERVICE_URL}/products/{payload.product_id}", headers=headers
-            )
-            product_response.raise_for_status()
-            product = product_response.json()
-        except httpx.HTTPStatusError as exc:
-            raise HTTPException(status_code=exc.response.status_code, detail="Unable to validate product")
-        except httpx.RequestError:
-            raise HTTPException(status_code=503, detail="Product service unavailable")
-
-        order_id = str(uuid4())
-        amount = round(product["price"] * payload.quantity, 2)
-        order_data = {
-            "order_id": order_id,
-            "user": user,
-            "product_id": product["id"],
-            "product_name": product["name"],
-            "quantity": payload.quantity,
-            "total_amount": amount,
-            "status": "payment_pending",
-        }
-        try:
-            payment_response = await client.post(
-                f"{PAYMENT_SERVICE_URL}/payments",
-                json={"order_id": order_id, "amount": amount, "currency": "USD"},
-            )
-            payment_response.raise_for_status()
-            payment = payment_response.json()
-            order_data["payment"] = payment
-            order_data["status"] = "confirmed"
-        except httpx.HTTPStatusError:
-            raise HTTPException(status_code=502, detail="Payment service rejected the request")
-        except httpx.RequestError:
-            raise HTTPException(status_code=503, detail="Payment service unavailable")
-
-    order = Order(**order_data)
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-    return serialize_order(order)
+    key = validate_idempotency_key(idempotency_key)
+    request_hash = canonical_request_hash(payload.product_id, payload.quantity)
+    record, acquired = claim_idempotency_record(user, key, request_hash, payload.product_id, payload.quantity)
+    if not acquired:
+        if record["status"] in {"SUCCEEDED", "FAILED"}:
+            return _stored_response(record)
+        return _in_progress_response(record)
+    return await process_transaction(record["id"])
 
 
 @app.get("/orders")

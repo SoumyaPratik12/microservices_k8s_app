@@ -1,0 +1,87 @@
+{{- if and .Values.migrations.enabled .Values.reconciliation.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "microservices-app.fullname" . }}-order-reconciler
+  labels:
+    {{- include "microservices-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: order-reconciler
+spec:
+  schedule: {{ .Values.reconciliation.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 180
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: order-reconciler
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - name: wait-for-database-migration
+              image: "{{ .Values.services.order.image }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["sh", "-c"]
+              args:
+                - |
+                  attempt=0
+                  until python -c 'from sqlalchemy import text; from shared.database import engine; connection = engine.connect(); row = connection.execute(text("SELECT version_num FROM alembic_version")).first(); connection.close(); assert row' >/dev/null 2>&1; do
+                    attempt=$((attempt + 1))
+                    if [ "$attempt" -ge 150 ]; then
+                      echo "Timed out waiting for database migration" >&2
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+              env:
+                - name: DB_HOST
+                  value: postgres
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_NAME
+                  value: {{ .Values.postgres.database | quote }}
+                - name: DB_USER
+                  value: {{ .Values.postgres.username | quote }}
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secret.name }}
+                      key: {{ .Values.secret.postgresPasswordKey }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          containers:
+            - name: order-reconciler
+              image: "{{ .Values.services.order.image }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["python", "-m", "services.order_service.reconcile"]
+              args: ["--once"]
+              envFrom:
+                - configMapRef:
+                    name: {{ include "microservices-app.fullname" . }}-config
+              env:
+                - name: JWT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secret.name }}
+                      key: {{ .Values.secret.jwtKey }}
+                - name: DB_HOST
+                  value: postgres
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_NAME
+                  value: {{ .Values.postgres.database | quote }}
+                - name: DB_USER
+                  value: {{ .Values.postgres.username | quote }}
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secret.name }}
+                      key: {{ .Values.secret.postgresPasswordKey }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+{{- end }}

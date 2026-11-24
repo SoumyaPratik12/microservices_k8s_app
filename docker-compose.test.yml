@@ -1,0 +1,38 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: test_microservices
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD:?POSTGRES_TEST_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_microservices"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data:rw,noexec,nosuid,size=512m
+
+  integration-tests:
+    image: microservices-k8s-app-auth:0.5.0
+    command:
+      - sh
+      - -c
+      - |
+        attempt=0
+        until python -c 'import os; from sqlalchemy import create_engine; engine = create_engine(os.environ["TEST_POSTGRES_URL"]); connection = engine.connect(); connection.close(); engine.dispose()' >/dev/null 2>&1; do
+          attempt=$((attempt + 1))
+          if [ "$${attempt}" -ge 30 ]; then
+            echo "Timed out waiting for the disposable PostgreSQL test database" >&2
+            exit 1
+          fi
+          sleep 2
+        done
+        exec pytest -v -p no:cacheprovider -m postgresql tests/integration
+    volumes:
+      - .:/app:ro
+    environment:
+      TEST_POSTGRES_URL: postgresql+psycopg://test_user:${POSTGRES_TEST_PASSWORD}@postgres-test:5432/test_microservices
+    depends_on:
+      postgres-test:
+        condition: service_healthy

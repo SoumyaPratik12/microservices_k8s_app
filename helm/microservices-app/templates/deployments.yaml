@@ -1,5 +1,5 @@
 {{- range $key, $svc := .Values.services }}
-{{- $usesDatabase := has $key (list "auth" "product" "order") }}
+{{- $usesDatabase := has $key (list "auth" "product" "order" "payment") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,6 +19,40 @@ spec:
         app.kubernetes.io/instance: {{ $.Release.Name }}
         app.kubernetes.io/component: {{ $svc.name }}
     spec:
+      {{- if $.Values.migrations.enabled }}
+      initContainers:
+        - name: wait-for-database-migration
+          image: "{{ $svc.image }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              attempt=0
+              until python -c 'from sqlalchemy import text; from shared.database import engine; connection = engine.connect(); row = connection.execute(text("SELECT version_num FROM alembic_version")).first(); connection.close(); assert row' >/dev/null 2>&1; do
+                attempt=$((attempt + 1))
+                if [ "$attempt" -ge 150 ]; then
+                  echo "Timed out waiting for database migration" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: {{ $.Values.postgres.database | quote }}
+            - name: DB_USER
+              value: {{ $.Values.postgres.username | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secret.name }}
+                  key: {{ $.Values.secret.postgresPasswordKey }}
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+      {{- end }}
       containers:
         - name: {{ $svc.name }}
           image: "{{ $svc.image }}:{{ $.Values.image.tag }}"
@@ -40,6 +74,10 @@ spec:
                 secretKeyRef:
                   name: {{ $.Values.secret.name }}
                   key: {{ $.Values.secret.jwtKey }}
+            {{- end }}
+            {{- if eq $key "payment" }}
+            - name: PAYMENT_SIMULATED_OUTCOME
+              value: {{ $.Values.payment.simulatedOutcome | quote }}
             {{- end }}
             {{- if $usesDatabase }}
             - name: DB_HOST

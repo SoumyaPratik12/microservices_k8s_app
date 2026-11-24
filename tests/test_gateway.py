@@ -1,8 +1,10 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from api_gateway.app.main import app
 
 client = TestClient(app)
+pytestmark = [pytest.mark.unit, pytest.mark.api, pytest.mark.regression]
 
 
 def test_gateway_health():

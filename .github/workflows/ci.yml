@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy --ignore-missing-imports shared services api_gateway
+      - run: python -m compileall -q shared services api_gateway migrations
+      - run: pytest -v
+
+  postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_microservices
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: ci-test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user -d test_microservices"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://test_user:ci-test-only-password@localhost:5432/test_microservices
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: pytest -v -m postgresql tests/integration
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: helm lint helm/microservices-app
+      - run: helm template microservices helm/microservices-app --namespace microservices-test --set image.tag=ci
+
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: auth
+            module: services.auth_service.app.main:app
+          - service: product
+            module: services.product_service.app.main:app
+          - service: payment
+            module: services.payment_service.app.main:app
+          - service: order
+            module: services.order_service.app.main:app
+          - service: gateway
+            module: api_gateway.app.main:app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: microservices-k8s-app-${{ matrix.service }}:ci
+          build-args: APP_MODULE=${{ matrix.module }}
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: microservices-k8s-app-${{ matrix.service }}:ci
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "1"

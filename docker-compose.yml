@@ -14,6 +14,23 @@ services:
       retries: 20
     restart: unless-stopped
 
+  migrations:
+    build:
+      context: .
+      args:
+        APP_MODULE: services.auth_service.app.main:app
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: microservices
+      DB_USER: microservices
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-development-only-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   auth-service:
     build:
       context: .
@@ -30,8 +47,8 @@ services:
     ports:
       - "8001:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
@@ -55,8 +72,8 @@ services:
     ports:
       - "8002:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
@@ -71,8 +88,18 @@ services:
         APP_MODULE: services.payment_service.app.main:app
     environment:
       PORT: "8000"
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: microservices
+      DB_USER: microservices
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-development-only-change-me}
+      PAYMENT_SIMULATED_OUTCOME: ${PAYMENT_SIMULATED_OUTCOME:-succeeded}
     ports:
       - "8003:8000"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
@@ -98,8 +125,8 @@ services:
     ports:
       - "8004:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
       product-service:
         condition: service_healthy
       payment-service:
@@ -109,6 +136,31 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  order-reconciler:
+    build:
+      context: .
+      args:
+        APP_MODULE: services.order_service.app.main:app
+    command: ["python", "-m", "services.order_service.reconcile"]
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-me}
+      PRODUCT_SERVICE_URL: http://product-service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8000
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: microservices
+      DB_USER: microservices
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-development-only-change-me}
+      RECONCILIATION_INTERVAL_SECONDS: "15"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      product-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
     restart: unless-stopped
 
   api-gateway:
@@ -125,6 +177,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       auth-service:
         condition: service_healthy
       product-service:

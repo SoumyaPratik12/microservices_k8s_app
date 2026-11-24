@@ -5,7 +5,7 @@ replicaCount: 1
 
 image:
   pullPolicy: IfNotPresent
-  tag: "0.1.0"
+  tag: "0.5.0"
 
 services:
   auth:
@@ -22,7 +22,7 @@ services:
     name: payment-service
     image: microservices-k8s-app-payment
     port: 8000
-    jwtSecret: false
+    jwtSecret: true
   order:
     name: order-service
     image: microservices-k8s-app-order
@@ -85,3 +85,13 @@ config:
   paymentServiceUrl: "http://payment-service:8000"
 
 # Create app-secrets separately; never store credentials in this file.
+
+migrations:
+  enabled: true
+
+reconciliation:
+  enabled: true
+  schedule: "*/1 * * * *"
+
+payment:
+  simulatedOutcome: succeeded

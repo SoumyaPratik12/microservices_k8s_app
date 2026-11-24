@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -6,6 +7,7 @@ from services.auth_service.app.models import User
 from services.auth_service.app import main as auth
 
 client = TestClient(auth.app)
+pytestmark = [pytest.mark.unit, pytest.mark.api, pytest.mark.regression]
 
 
 def setup_function():

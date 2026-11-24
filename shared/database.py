@@ -28,7 +28,7 @@ def _database_url() -> str | URL:
 
 DATABASE_URL = _database_url()
 _is_sqlite = str(DATABASE_URL).startswith("sqlite")
-_engine_options = {"pool_pre_ping": True}
+_engine_options: dict[str, object] = {"pool_pre_ping": True}
 if _is_sqlite:
     _engine_options["connect_args"] = {"check_same_thread": False}
 

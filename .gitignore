@@ -14,3 +14,10 @@ venv/
 # Editor / OS
 .vscode/
 .DS_Store
+
+# Database backups
+*.dump
+*.sql
+
+# Helm installation script
+get_helm.sh
