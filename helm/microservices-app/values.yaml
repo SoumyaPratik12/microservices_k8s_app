@@ -1,11 +1,14 @@
 nameOverride: ""
+
+migrations:
+  enabled: true
 fullnameOverride: ""
 
 replicaCount: 1
 
 image:
   pullPolicy: IfNotPresent
-  tag: "0.1.0"
+  tag: "0.3.0"
 
 services:
   auth:

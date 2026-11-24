@@ -14,3 +14,8 @@ venv/
 # Editor / OS
 .vscode/
 .DS_Store
+
+# Database backups and local installers
+*.dump
+*.sql
+get_helm.sh
