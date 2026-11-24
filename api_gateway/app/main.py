@@ -4,7 +4,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-app = FastAPI(title="Microservices API Gateway", version="0.1.0")
+app = FastAPI(title="Microservices API Gateway", version="0.3.0")
 SERVICES = {
     "auth": os.getenv("AUTH_SERVICE_URL", "http://127.0.0.1:8001"),
     "products": os.getenv("PRODUCT_SERVICE_URL", "http://127.0.0.1:8002"),
