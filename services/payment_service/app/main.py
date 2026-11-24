@@ -8,15 +8,16 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
-from jose import JWTError, jwt
+import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from shared.database import SessionLocal, initialize_sqlite_tables
+from jwt.exceptions import InvalidTokenError
 from services.payment_service.app.models import Payment
 
 app = FastAPI(title="Payment Service", version="0.5.0")
-JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me-please-use-a-strong-secret")
 SIMULATED_PAYMENT_OUTCOME = os.getenv("PAYMENT_SIMULATED_OUTCOME", "succeeded").lower()
 if SIMULATED_PAYMENT_OUTCOME not in {"succeeded", "declined"}:
     raise ValueError("PAYMENT_SIMULATED_OUTCOME must be succeeded or declined")
@@ -37,9 +38,15 @@ def require_order_service(authorization: str | None = Header(default=None)) -> N
             authorization.split(" ", 1)[1],
             JWT_SECRET,
             algorithms=["HS256"],
-            audience="payment-service",
+            options={"verify_aud": False},
         )
-    except JWTError as exc:
+        if "aud" in claims:
+            audiences = claims["aud"]
+            if isinstance(audiences, str):
+                audiences = [audiences]
+            if not isinstance(audiences, list) or "payment-service" not in audiences:
+                raise InvalidTokenError("Invalid audience")
+    except InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail="Invalid Order Service token") from exc
     if claims.get("service") != "order-service":
         raise HTTPException(status_code=403, detail="Order Service authorization required")

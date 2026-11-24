@@ -11,7 +11,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from jose import jwt
+import jwt
 from sqlalchemy import or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
@@ -22,7 +22,7 @@ from services.order_service.app.models import IdempotencyRecord, Order
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me-please-use-a-strong-secret")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://127.0.0.1:8002")
 PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8003")
 LEASE_SECONDS = 30

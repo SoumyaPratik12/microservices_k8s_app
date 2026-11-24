@@ -4,18 +4,19 @@ from datetime import datetime, timezone
 from typing import Annotated, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
-from jose import JWTError, jwt
+import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from jwt.exceptions import InvalidTokenError
 
 from shared.database import get_db, initialize_sqlite_tables
 from services.product_service.app.models import InventoryReservation, Product
 
 app = FastAPI(title="Product Service", version="0.2.0")
-JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me-please-use-a-strong-secret")
 initialize_sqlite_tables([Product.__table__, InventoryReservation.__table__])
 
 
@@ -43,7 +44,7 @@ def require_user(authorization: Annotated[str | None, Header()] = None) -> str:
     try:
         claims = jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
         return claims["sub"]
-    except (JWTError, KeyError):
+    except (InvalidTokenError, KeyError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
@@ -55,9 +56,15 @@ def require_order_service(authorization: Annotated[str | None, Header()] = None)
             authorization.split(" ", 1)[1],
             JWT_SECRET,
             algorithms=["HS256"],
-            audience="product-service",
+            options={"verify_aud": False},
         )
-    except JWTError:
+        if "aud" in claims:
+            audiences = claims["aud"]
+            if isinstance(audiences, str):
+                audiences = [audiences]
+            if not isinstance(audiences, list) or "product-service" not in audiences:
+                raise InvalidTokenError("Invalid audience")
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid Order Service token")
     if claims.get("service") != "order-service":
         raise HTTPException(status_code=403, detail="Order Service authorization required")

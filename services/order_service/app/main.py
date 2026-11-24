@@ -2,10 +2,11 @@ import os
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from jose import JWTError, jwt
+import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from jwt.exceptions import InvalidTokenError
 
 from shared.database import get_db, initialize_sqlite_tables
 from services.order_service.app.models import IdempotencyRecord, Order
@@ -19,7 +20,7 @@ from services.order_service.app.transactions import (
 )
 
 app = FastAPI(title="Order Service", version="0.5.0")
-JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me-please-use-a-strong-secret")
 initialize_sqlite_tables([Order.__table__, IdempotencyRecord.__table__])
 
 
@@ -34,7 +35,7 @@ def require_user(authorization: Annotated[str | None, Header()] = None) -> str:
     try:
         claims = jwt.decode(authorization.split(" ", 1)[1], JWT_SECRET, algorithms=["HS256"])
         return claims["sub"]
-    except (JWTError, KeyError):
+    except (InvalidTokenError, KeyError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 

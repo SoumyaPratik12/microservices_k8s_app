@@ -14,7 +14,12 @@ services:
       - /var/lib/postgresql/data:rw,noexec,nosuid,size=512m
 
   integration-tests:
-    image: microservices-k8s-app-auth:0.5.0
+    image: microservices-k8s-app-postgres-tests:dev
+    build:
+      context: .
+      args:
+        APP_MODULE: services.auth_service.app.main:app
+        REQUIREMENTS_FILE: requirements-dev.txt
     command:
       - sh
       - -c
@@ -30,7 +35,12 @@ services:
         done
         exec pytest -v -p no:cacheprovider -m postgresql tests/integration
     volumes:
-      - .:/app:ro
+      - ./migrations:/app/migrations:ro
+      - ./services:/app/services:ro
+      - ./shared:/app/shared:ro
+      - ./tests:/app/tests:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./pytest.ini:/app/pytest.ini:ro
     environment:
       TEST_POSTGRES_URL: postgresql+psycopg://test_user:${POSTGRES_TEST_PASSWORD}@postgres-test:5432/test_microservices
     depends_on:

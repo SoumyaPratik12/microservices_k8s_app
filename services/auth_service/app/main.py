@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from jose import jwt
+import jwt
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from shared.database import get_db, initialize_sqlite_tables
 from services.auth_service.app.models import User
 
 app = FastAPI(title="Auth Service", version="0.2.0")
-JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me-please-use-a-strong-secret")
 initialize_sqlite_tables([User.__table__])
 
 

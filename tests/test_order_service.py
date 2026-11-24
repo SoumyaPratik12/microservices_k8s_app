@@ -7,7 +7,7 @@ from threading import Barrier
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy import delete, select
 
 from shared.database import SessionLocal

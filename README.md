@@ -163,6 +163,8 @@ Validate and render the chart before installing:
 
 Fresh install: the chart creates PostgreSQL and its PVC, then a `post-install` migration Job waits for PostgreSQL and applies Alembic. Database-backed application pods wait for the migration revision before becoming Ready. Do not pass Helm's `--wait` on this fresh install: Helm waits for application readiness before running post-install hooks, while those pods intentionally wait for the hook's migration.
 
+The verified GitHub deployment workflow detects whether the Helm release already exists: it omits `--wait` for a fresh install and enables it for upgrades, then explicitly waits for the workloads after the migration hook completes.
+
 Install the chart:
 
     helm upgrade --install microservices helm/microservices-app \
@@ -250,6 +252,8 @@ Review the generated revision and edit it as needed before applying. To apply, i
     docker compose run --rm migrations alembic check
     docker compose run --rm migrations alembic upgrade head
     docker compose exec -T postgres psql -U microservices -d microservices -c "SELECT version_num FROM alembic_version;"
+
+The initial migration recognizes the matching tables created by previous releases, validates their expected columns, preserves existing rows, and creates only missing base tables/indexes. Incompatible legacy tables stop the migration with an explicit error.
 
 Unit tests use isolated SQLite and do not connect to Compose or Kubernetes PostgreSQL:
 

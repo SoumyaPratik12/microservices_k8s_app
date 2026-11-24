@@ -138,6 +138,10 @@ jobs:
         run: |
           owner="${IMAGE_REGISTRY,,}"
           repository="${IMAGE_REPOSITORY,,}"
+          wait_flags=()
+          if helm status microservices --namespace "$NAMESPACE" >/dev/null 2>&1; then
+            wait_flags=(--wait --wait-for-jobs)
+          fi
           helm upgrade --install microservices helm/microservices-app \
             --namespace "$NAMESPACE" \
             --set-string image.tag="$IMAGE_TAG" \
@@ -146,7 +150,7 @@ jobs:
             --set-string services.payment.image="$owner/$repository-payment" \
             --set-string services.order.image="$owner/$repository-order" \
             --set-string services.gateway.image="$owner/$repository-gateway" \
-            --timeout 10m --wait --wait-for-jobs
+            --timeout 10m "${wait_flags[@]}"
           kubectl -n "$NAMESPACE" wait --for=condition=available deployment --all --timeout=300s
           kubectl -n "$NAMESPACE" rollout status statefulset/postgres --timeout=300s
       - name: Verify database and gateway

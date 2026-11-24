@@ -4,7 +4,7 @@ from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy import delete
 
 from shared.database import SessionLocal
@@ -34,13 +34,13 @@ def auth_headers():
     return {"Authorization": f"Bearer {token}"}
 
 
-def order_service_headers():
+def order_service_headers(audience="product-service"):
     now = datetime.now(timezone.utc)
     token = jwt.encode(
         {
             "sub": "order-service",
             "service": "order-service",
-            "aud": "product-service",
+            "aud": audience,
             "iat": now,
             "exp": now + timedelta(minutes=10),
         },
@@ -171,3 +171,13 @@ def test_regular_user_cannot_release_stock():
     )
 
     assert response.status_code == 403
+
+
+def test_order_service_token_with_wrong_audience_is_rejected():
+    response = client.post(
+        "/products/1/reserve",
+        headers=order_service_headers(audience="payment-service"),
+        json={"quantity": 1},
+    )
+
+    assert response.status_code == 401

@@ -4,7 +4,7 @@ from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy import delete, select
 
 from shared.database import SessionLocal
@@ -21,13 +21,13 @@ def setup_function():
         db.commit()
 
 
-def order_service_headers(key="payment-key"):
+def order_service_headers(key="payment-key", audience="payment-service"):
     now = datetime.now(timezone.utc)
     token = jwt.encode(
         {
             "sub": "order-service",
             "service": "order-service",
-            "aud": "payment-service",
+            "aud": audience,
             "iat": now,
             "exp": now + timedelta(minutes=10),
         },
@@ -137,3 +137,13 @@ def test_payment_outcome_lookup_requires_service_auth():
     assert lookup.status_code == 200
     assert lookup.json() == created.json()
     assert client.get("/payments/by-idempotency-key/payment-lookup").status_code == 401
+
+
+def test_payment_rejects_order_service_token_with_wrong_audience():
+    response = client.post(
+        "/payments",
+        headers=order_service_headers(audience="product-service"),
+        json={"order_id": "wrong-audience-order", "amount": 1},
+    )
+
+    assert response.status_code == 401
