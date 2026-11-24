@@ -7,7 +7,7 @@ metadata:
     {{- include "microservices-app.labels" . | nindent 4 }}
     app.kubernetes.io/component: database-migration
   annotations:
-    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook": post-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
@@ -24,8 +24,12 @@ spec:
         - name: database-migration
           image: "{{ .Values.services.auth.image }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["alembic"]
-          args: ["upgrade", "head"]
+          command: ["sh", "-c"]
+          args:
+            - >-
+              until python -c "from shared.database import engine; engine.connect().close()" >/dev/null 2>&1;
+              do echo "Waiting for PostgreSQL"; sleep 2; done;
+              alembic upgrade head
           env:
             - name: DB_HOST
               value: postgres
