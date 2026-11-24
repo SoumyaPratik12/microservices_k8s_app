@@ -101,7 +101,7 @@ Passwords are hashed with PBKDF2-HMAC-SHA256. Auth users, products and orders ar
 - **Phase 2:** PostgreSQL persistence for Auth, Product and Order; SQLAlchemy ORM and automated persistence tests
 - **Phase 3:** Kubernetes Deployments, Services, Ingress, probes, ConfigMaps and Secrets
 - **Phase 4:** Helm, PostgreSQL StatefulSet with PVC, CI/CD and image publishing
-- **Phase 5:** Alembic migrations, Redis, autoscaling, Prometheus, Grafana and resilience testing
+- **Phase 5:** Redis, autoscaling, Prometheus, Grafana and resilience testing
 
 
 ## Helm deployment (Phase 3)
@@ -212,7 +212,26 @@ To intentionally delete the local database volume (destructive):
 
     docker compose down -v
 
-The application creates its current MVP tables at service startup. A versioned Alembic migration workflow is the next database-hardening task.
+Production database schema changes are managed through versioned Alembic migrations. Application services do not create PostgreSQL tables during startup; run migrations before accepting database-backed traffic.
+
+## Database schema migrations
+
+Alembic owns the PostgreSQL schema lifecycle for Auth, Product and Order. The initial revision is `608478858234`. SQLite tables are still initialized by the application test setup only.
+
+Run migrations manually in a configured environment:
+
+    pip install -r requirements-dev.txt
+    alembic current
+    alembic upgrade head
+    alembic check
+
+For a new schema change, update the SQLAlchemy model first and generate a revision:
+
+    alembic revision --autogenerate -m "describe schema change"
+
+Review the generated migration before applying it. Do not use `alembic stamp` on a database unless its existing schema has been independently verified to match the target revision.
+
+The Helm chart runs a migration Job after a fresh install and before each upgrade. The Job uses the Auth image, waits for PostgreSQL readiness, reads the database password from the Kubernetes Secret, and runs `alembic upgrade head`. The image must contain the current Alembic configuration and migration files before the Helm operation starts.
 
 ## Helm with PostgreSQL
 
