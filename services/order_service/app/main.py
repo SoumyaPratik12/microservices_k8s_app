@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from shared.database import get_db, initialize_database, initialize_sqlite_tables
+from shared.database import get_db, initialize_sqlite_tables
 from services.order_service.app.models import Order
 
 app = FastAPI(title="Order Service", version="0.2.0")
@@ -45,11 +45,6 @@ def serialize_order(order: Order) -> dict:
         "status": order.status,
         "payment": order.payment,
     }
-
-
-@app.on_event("startup")
-def startup_database():
-    initialize_database([Order.__table__])
 
 
 @app.get("/health")
