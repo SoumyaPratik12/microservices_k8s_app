@@ -1,6 +1,4 @@
 from alembic import context
-from sqlalchemy import pool
-
 from shared.database import Base, engine
 from services.auth_service.app import models as auth_models  # noqa: F401
 from services.product_service.app import models as product_models  # noqa: F401
