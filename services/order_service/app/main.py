@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from shared.database import get_db, initialize_sqlite_tables
 from services.order_service.app.models import Order
 
-app = FastAPI(title="Order Service", version="0.2.0")
+app = FastAPI(title="Order Service", version="0.3.0")
 JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-me")
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://127.0.0.1:8002")
 PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://127.0.0.1:8003")
