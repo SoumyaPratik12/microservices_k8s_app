@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Payment Service", version="0.1.0")
+app = FastAPI(title="Payment Service", version="0.3.0")
 
 
 class PaymentRequest(BaseModel):
